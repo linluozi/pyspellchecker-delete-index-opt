@@ -1,0 +1,136 @@
+{
+  "_comment": "Every value below is the output of a run recorded in this folder, not an estimate. See README for the commands.",
+  "environment": {
+    "python": "CPython 3.13.14",
+    "os": "Windows 11",
+    "dictionary": "pyspellchecker en (160,572 words, 45 distinct characters)",
+    "baseline_commit": "14ec86570f5cebb5ee2f57499493471fe670dadb"
+  },
+  "correctness": [
+    {
+      "check": "upstream test suite on the patched tree",
+      "result": "59 passed",
+      "detail": "same 59 as the untouched baseline"
+    },
+    {
+      "check": "ruff check (upstream CI)",
+      "result": "All checks passed",
+      "detail": "pyproject selects E,F,UP,B,SIM,I"
+    },
+    {
+      "check": "ruff format --check (upstream CI)",
+      "result": "7 files already formatted",
+      "detail": ""
+    },
+    {
+      "check": "real-dictionary query set, element by element",
+      "result": "2100 / 2100 identical",
+      "detail": "300 correct + 600 1-edit + 800 2-edit + 400 random"
+    },
+    {
+      "check": "exhaustive sweeps, small dictionary",
+      "result": "71,829 queries, 0 differences",
+      "detail": "5 configurations: 4/5-letter alphabet, len 0-7, case-sensitive, distance=1, numeric words"
+    },
+    {
+      "check": "poison test on the harness itself",
+      "result": "hundreds of mismatches",
+      "detail": "disabling the one-edit verification makes the same harness fail"
+    },
+    {
+      "check": "patch applies and reproduces the patched file",
+      "result": "byte-for-byte identical",
+      "detail": "patch -p1 on an LF checkout, then cmp"
+    },
+    {
+      "check": "LICENSE vs upstream",
+      "result": "byte-identical",
+      "detail": "sha1 39f9d94759acf83736c1d532bdebd686d653d546"
+    }
+  ],
+  "exhaustive": [
+    {
+      "config": "alphabet abcd, len 0-7, distance 2",
+      "queries": 21845,
+      "differences": 0
+    },
+    {
+      "config": "alphabet abcd, len 0-7, case-sensitive",
+      "queries": 21845,
+      "differences": 0
+    },
+    {
+      "config": "alphabet abcde, len 0-6, distance 2",
+      "queries": 19531,
+      "differences": 0
+    },
+    {
+      "config": "alphabet abcd, len 0-6, distance 1",
+      "queries": 5461,
+      "differences": 0
+    },
+    {
+      "config": "alphabet abcd1, len 0-6, numeric + punctuation words",
+      "queries": 19531,
+      "differences": 0
+    },
+    {
+      "config": "alphabet abcd, len 0-6, numeric + punctuation words",
+      "queries": 5461,
+      "differences": 0
+    }
+  ],
+  "ab": {
+    "rounds_ms_upstream": [
+      25999.68,
+      14826.72,
+      15663.73,
+      15244.13,
+      15573.42,
+      15995.78,
+      15251.61
+    ],
+    "rounds_ms_optimized": [
+      143.54,
+      131.7,
+      147.09,
+      161.44,
+      150.56,
+      140.14,
+      146.52
+    ],
+    "noise_ratios": [
+      1.14,
+      1.0,
+      0.99,
+      1.04,
+      1.04,
+      0.97,
+      0.96
+    ],
+    "n_queries_per_round": 40
+  },
+  "work": {
+    "n_queries": 150,
+    "upstream_ed1_calls": 99040,
+    "optimized_ed1_calls": 145,
+    "upstream_strings": 90445606,
+    "upstream_outer_strings": 117742,
+    "optimized_ed1_strings": 115717,
+    "optimized_index_keys": 1220336,
+    "upstream_should_check": 201176,
+    "optimized_should_check": 1015
+  },
+  "cost": {
+    "index_build_seconds": 0.79,
+    "index_entries": 1369364,
+    "index_entries_with_dupes": 1576382,
+    "rss_before_mb": 43.4,
+    "rss_after_mb": 145.9,
+    "rss_delta_mb": 102.6,
+    "rejected_list_encoding_delta_mb": 201.6,
+    "two_delete_entries": 7678646,
+    "cold_start_ms": 827.8,
+    "warm_per_word_ms": 3.1
+  }
+}

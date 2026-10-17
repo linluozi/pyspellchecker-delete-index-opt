@@ -1,0 +1,1220 @@
+"""Desc:   A script to automate the building of multiple dictionaries based on
+        known areas of concern due to the original source of the data. The
+        script can be run from the source directly (-P and -p) once a
+        suitable text file is obtained. It can also be run on a previously
+        generated word frequency list to remove known problem areas.
+Author: Tyler Barrus
+Notes:  The original inputs are from OpenSubtitles (http://opus.nlpl.eu/OpenSubtitles2018.php):
+        English Input:    http://opus.nlpl.eu/download.php?f=OpenSubtitles/v2018/mono/OpenSubtitles.raw.en.gz
+        Spanish Input:    http://opus.nlpl.eu/download.php?f=OpenSubtitles/v2018/mono/OpenSubtitles.raw.es.gz
+        German Input:     http://opus.nlpl.eu/download.php?f=OpenSubtitles/v2018/mono/OpenSubtitles.raw.de.gz
+        French Input:     http://opus.nlpl.eu/download.php?f=OpenSubtitles/v2018/mono/OpenSubtitles.raw.fr.gz
+        Portuguese Input: http://opus.nlpl.eu/download.php?f=OpenSubtitles/v2018/mono/OpenSubtitles.raw.pt.gz
+        Russian Input:    http://opus.nlpl.eu/download.php?f=OpenSubtitles/v2018/mono/OpenSubtitles.raw.ru.gz
+        Arabic Input:     http://opus.nlpl.eu/download.php?f=OpenSubtitles/v2018/mono/OpenSubtitles.raw.ar.gz
+        Basque Input:     http://opus.nlpl.eu/download.php?f=tiOpenSubtles/v2018/mono/OpenSubtitles.raw.eu.gz
+        Latvian Input:    https://huggingface.co/datasets/RaivisDejus/latvian-text
+        Dutch Input:      http://opus.nlpl.eu/download.php?f=OpenSubtitles/v2018/mono/OpenSubtitles.raw.nl.gz
+        Italian Input:    http://opus.nlpl.eu/download.php?f=OpenSubtitles/v2018/mono/OpenSubtitles.raw.it.gz
+        Persian Input:    https://drive.google.com/open?id=1mBeSSrEnajB2qxYs67tQbEDWmpRMZ0U0
+Requirements:
+        The script requires more than the standard library to run in its
+        entirety. You will also need to install the NLTK package to build a
+        dictionary from scratch. Otherwise, no additional packages are
+        required.
+"""
+
+import contextlib
+import gzip
+import json
+import os
+import string
+from collections import Counter
+
+STRING_PUNCTUATION = tuple(string.punctuation)
+DIGETS = tuple(string.digits)
+MINIMUM_FREQUENCY = 50
+
+
+@contextlib.contextmanager
+def load_file(filename, encoding="utf-8"):
+    """Context manager to handle opening a gzip or text file correctly and
+    reading all the data
+
+    Args:
+        filename (str): The filename to open
+        encoding (str): The file encoding to use
+    Yields:
+        str: The string data from the file read
+    """
+    if filename[-3:].lower() == ".gz":
+        with gzip.open(filename, mode="rt", encoding=encoding) as fobj:
+            yield fobj
+    else:
+        with open(filename, encoding=encoding) as fobj:
+            yield fobj
+
+
+def load_include_exclude(filename, encoding="utf-8"):
+    with load_file(filename=filename, encoding=encoding) as f:
+        for line in f:
+            if line[0] == "#":
+                continue
+            line = line.strip().split()
+            for ln in line:
+                yield ln.strip().lower()
+
+
+def export_word_frequency(filepath, word_frequency):
+    """Export a word frequency as a json object
+
+    Args:
+        filepath (str):
+        word_frequency (Counter):
+    """
+    with open(filepath, "w") as f:
+        json.dump(word_frequency, f, indent="", sort_keys=True, ensure_ascii=False)
+
+
+def build_word_frequency(filepath, language, output_path):
+    """Parse the passed in text file (likely from Open Subtitles) into
+    a word frequency list and write it out to disk
+
+    Args:
+        filepath (str):
+        language (str):
+        output_path (str):
+    Returns:
+        Counter: The word frequency as parsed from the file
+    Note:
+        This only removes words that are proper nouns (attempts to...) and
+        anything that starts or stops with something that is not in the alphabet.
+    """
+    # NLTK is only needed in this portion of the project
+    try:
+        import nltk  # type: ignore
+        from nltk.tag import pos_tag  # type: ignore
+        from nltk.tokenize import WhitespaceTokenizer  # type: ignore
+        from nltk.tokenize.toktok import ToktokTokenizer  # type: ignore
+    except ImportError as ex:
+        raise ImportError(f"To build a dictionary from scratch, NLTK is required!\n{ex}") from ex
+
+    nltk.download("averaged_perceptron_tagger")
+    word_frequency = Counter()
+    tok = ToktokTokenizer() if language in ["es", "it"] else WhitespaceTokenizer()
+
+    idx = 0
+    with load_file(filepath, "utf-8") as fobj:
+        for line in fobj:
+            # tokenize into parts
+            parts = tok.tokenize(line)
+
+            # Attempt to remove proper nouns
+            # Remove things that have leading or trailing non-alphabetic characters.
+            tagged_sent = pos_tag(parts)
+            words = [
+                word[0].lower()
+                for word in tagged_sent
+                if word[0] and word[1] != "NNP" and word[0][0].isalpha() and word[0][-1].isalpha()
+            ]
+
+            # print(words)
+            if words:
+                word_frequency.update(words)
+
+            idx += 1
+
+            if idx % 100000 == 0:
+                print(f"completed: {idx} rows")
+        # end file loop
+    print(f"completed: {idx} rows")
+    export_word_frequency(output_path, word_frequency)
+
+    return word_frequency
+
+
+def export_misfit_words(misfit_filepath, word_freq_filepath, word_frequency):
+    with load_file(word_freq_filepath, "utf-8") as f:
+        source_word_frequency = json.load(f)
+
+    source_words = set(source_word_frequency.keys())
+    final_words = set(word_frequency.keys())
+
+    misfitted_words = source_words.difference(final_words)
+    misfitted_words = sorted(list(misfitted_words))
+
+    with open(misfit_filepath, "w+") as file:
+        for word in misfitted_words:
+            file.write(word)
+            file.write("\n")
+
+
+def clean_english(word_frequency, filepath_exclude, filepath_include, filepath_dictionary):
+    """Clean an English word frequency list
+
+    Args:
+        word_frequency (Counter):
+        filepath_exclude (str):
+        filepath_include (str):
+    """
+    letters = set("abcdefghijklmnopqrstuvwxyz'")
+
+    # remove words with invalid characters
+    invalid_chars = list()
+    for key in word_frequency:
+        kl = set(key)
+        if kl.issubset(letters):
+            continue
+        invalid_chars.append(key)
+    for misfit in invalid_chars:
+        word_frequency.pop(misfit)
+
+    # remove words without a vowel
+    no_vowels = list()
+    vowels = set("aeiouy")
+    for key in word_frequency:
+        if vowels.isdisjoint(key):
+            no_vowels.append(key)
+    for misfit in no_vowels:
+        word_frequency.pop(misfit)
+
+    # Remove double punctuation (a-a-a-able) or (a'whoppinganda'whumping)
+    double_punc = list()
+    for key in word_frequency:
+        if key.count("'") > 1 or key.count("-") > 1 or key.count(".") > 2:
+            double_punc.append(key)
+    for misfit in double_punc:
+        word_frequency.pop(misfit)
+
+    # remove ellipses
+    ellipses = list()
+    for key in word_frequency:
+        if ".." in key:
+            ellipses.append(key)
+    for misfit in ellipses:
+        word_frequency.pop(misfit)
+
+    # leading or trailing doubles a, "a'", "zz", ending y's
+    doubles = list()
+    for key in word_frequency:
+        if (
+            key.startswith("aa")
+            and key not in ("aardvark", "aardvarks")
+            or key.startswith("a'")
+            or key.startswith("zz")
+            or key.endswith("yy")
+            or key.endswith("hh")
+        ):
+            doubles.append(key)
+    for misfit in doubles:
+        word_frequency.pop(misfit)
+
+    # common missing spaces
+    missing_spaces = list()
+    for key in word_frequency:
+        if (
+            key.startswith("about")
+            and key != "about"
+            or key.startswith("above")
+            and key != "above"
+            or key.startswith("after")
+            and key != "after"
+            or key.startswith("against")
+            and key != "against"
+            or key.startswith("all")
+            and word_frequency[key] < 15
+            or key.startswith("almost")
+            and key != "almost"
+            or key.startswith("to")
+            and word_frequency[key] < 25
+            or key.startswith("can't")
+            and key != "can't"
+            or key.startswith("i'm")
+            and key != "i'm"
+        ):
+            missing_spaces.append(key)
+    for misfit in missing_spaces:
+        word_frequency.pop(misfit)
+
+    # TODO: other possible fixes?
+
+    # remove small numbers
+    small_frequency = list()
+    for key in word_frequency:
+        if word_frequency[key] <= MINIMUM_FREQUENCY:
+            small_frequency.append(key)
+    for misfit in small_frequency:
+        word_frequency.pop(misfit)
+
+    # remove flagged misspellings
+    for line in load_include_exclude(filepath_exclude):
+        if line in word_frequency:
+            word_frequency.pop(line)
+
+    # Use a dictionary to clean up everything else...
+    final_words_to_remove = []
+    with load_file(filepath_dictionary) as fobj:
+        dictionary_words = []
+        for line in fobj:
+            if line[0].lower() in letters:
+                line = line.lower().strip()
+                dictionary_words.append(line)
+
+    for word in word_frequency:
+        if word not in dictionary_words:
+            final_words_to_remove.append(word)
+    for word in final_words_to_remove:
+        word_frequency.pop(word)
+
+    for word in dictionary_words:
+        if word not in word_frequency:
+            word_frequency[word] = MINIMUM_FREQUENCY
+
+    # Add known missing words back in (ugh)
+    for line in load_include_exclude(filepath_include):
+        if line in word_frequency:
+            print(f"{line} is already found in the dictionary! Skipping!")
+        else:
+            word_frequency[line] = MINIMUM_FREQUENCY
+
+    return word_frequency
+
+
+def clean_spanish(word_frequency, filepath_exclude, filepath_include, filepath_dictionary):
+    """Clean a Spanish word frequency list
+
+    Args:
+        word_frequency (Counter):
+        filepath_exclude (str):
+        filepath_include (str):
+    """
+    letters = set("abcdefghijklmnopqrstuvwxyzáéíóúüñ")
+
+    # fix issues with words containing other characters
+    invalid_chars = list()
+    for key in word_frequency:
+        kl = set(key)
+        if kl.issubset(letters):
+            continue
+        invalid_chars.append(key)
+    for misfit in invalid_chars:
+        word_frequency.pop(misfit)
+
+    # fix issues with more than one accent marks
+    # NOTE: Not sure there are any occurrences but this is not possible as a valid word!
+    duplicate_accents = list()
+    for key in word_frequency:
+        if (key.count("á") + key.count("é") + key.count("í") + key.count("ó") + key.count("ú")) > 1:
+            duplicate_accents.append(key)
+    for misfit in duplicate_accents:
+        word_frequency.pop(misfit)
+
+    # fix misplaced "ü" marks
+    # NOTE: the ü must be just after a g and before an e or i only (with or without accent)!
+    misplaced_u = list()
+    for key in word_frequency:
+        if "ü" not in key:
+            continue
+        idx = key.index("ü")
+        if idx == 0 or idx == len(key) - 1:  # first or last letter
+            misplaced_u.append(key)
+            continue
+        if key[idx - 1] != "g" and key[idx + 1] not in "eéií":
+            misplaced_u.append(key)
+    for misfit in misplaced_u:
+        word_frequency.pop(misfit)
+
+    # ción issues
+    cion_issues = list()
+    for key in word_frequency:
+        if not key.endswith("cion"):
+            continue
+        base = key[:-4]
+        n_key = f"{base}ción"
+        if n_key in word_frequency:
+            cion_issues.append(key)
+    for misfit in cion_issues:
+        word_frequency.pop(misfit)
+
+    # remove words that start with a double a ("aa")
+    double_a = list()
+    for key in word_frequency:
+        if key.startswith("aa"):
+            double_a.append(key)
+    for misfit in double_a:
+        word_frequency.pop(misfit)
+
+    # TODO: other possible fixes?
+
+    # remove small numbers
+    small_frequency = list()
+    for key in word_frequency:
+        if word_frequency[key] <= MINIMUM_FREQUENCY:
+            small_frequency.append(key)
+    for misfit in small_frequency:
+        word_frequency.pop(misfit)
+
+    # remove flagged misspellings
+    for line in load_include_exclude(filepath_exclude):
+        if line in word_frequency:
+            word_frequency.pop(line)
+
+    # Use a dictionary to clean up everything else...
+    final_words_to_remove = []
+    with load_file(filepath_dictionary) as fobj:
+        dictionary_words = []
+        for line in fobj:
+            if line[0].lower() in letters:
+                line = line.lower().strip()
+                dictionary_words.append(line)
+
+    for word in word_frequency:
+        if word not in dictionary_words:
+            final_words_to_remove.append(word)
+    for word in final_words_to_remove:
+        word_frequency.pop(word)
+
+    for word in dictionary_words:
+        if word not in word_frequency:
+            word_frequency[word] = MINIMUM_FREQUENCY
+
+    # Add known missing words back in (ugh)
+    for line in load_include_exclude(filepath_include):
+        if line in word_frequency:
+            print(f"{line} is already found in the dictionary! Skipping!")
+        else:
+            word_frequency[line] = MINIMUM_FREQUENCY
+
+    return word_frequency
+
+
+def clean_italian(word_frequency, filepath_exclude, filepath_include, filepath_dictionary):
+    letters = set("abcdefghijklmnopqrstuvwxyzáéíóúüàèìòù")
+
+    # fix issues with words containing other characters
+    invalid_chars = list()
+    for key in word_frequency:
+        kl = set(key)
+        if kl.issubset(letters):
+            continue
+        invalid_chars.append(key)
+    for misfit in invalid_chars:
+        word_frequency.pop(misfit)
+
+    # remove small numbers
+    small_frequency = list()
+    for key in word_frequency:
+        if word_frequency[key] <= MINIMUM_FREQUENCY:
+            small_frequency.append(key)
+    for misfit in small_frequency:
+        word_frequency.pop(misfit)
+
+    # TODO: other possible fixes?
+
+    # remove flagged misspellings
+    for line in load_include_exclude(filepath_exclude):
+        if line in word_frequency:
+            word_frequency.pop(line)
+
+    # Use a dictionary to clean up everything else...
+    final_words_to_remove = []
+    with load_file(filepath_dictionary) as fobj:
+        dictionary_words = []
+        for line in fobj:
+            if line[0].lower() in letters:
+                line = line.lower().strip()
+                dictionary_words.append(line)
+
+    for word in word_frequency:
+        if word not in dictionary_words:
+            final_words_to_remove.append(word)
+    for word in final_words_to_remove:
+        word_frequency.pop(word)
+
+    for word in dictionary_words:
+        if word not in word_frequency:
+            word_frequency[word] = MINIMUM_FREQUENCY
+
+    # Add known missing words back in (ugh)
+    for line in load_include_exclude(filepath_include):
+        if line in word_frequency:
+            print(f"{line} is already found in the dictionary! Skipping!")
+        else:
+            word_frequency[line] = MINIMUM_FREQUENCY
+
+    return word_frequency
+
+
+def clean_german(word_frequency, filepath_exclude, filepath_include, filepath_dictionary):
+    """Clean a German word frequency list
+
+    Args:
+        word_frequency (Counter):
+        filepath_exclude (str):
+        filepath_include (str):
+    """
+    letters = set("abcdefghijklmnopqrstuvwxyzäöüß")
+
+    # fix issues with words containing other characters
+    invalid_chars = list()
+    for key in word_frequency:
+        kl = set(key)
+        if kl.issubset(letters):
+            continue
+        invalid_chars.append(key)
+    for misfit in invalid_chars:
+        word_frequency.pop(misfit)
+
+    # remove words that start with a double a ("aa")
+    double_a = list()
+    for key in word_frequency:
+        if key.startswith("aa"):
+            double_a.append(key)
+    for misfit in double_a:
+        word_frequency.pop(misfit)
+
+    # TODO: other possible fixes?
+
+    # remove small numbers
+    small_frequency = list()
+    for key in word_frequency:
+        if word_frequency[key] <= MINIMUM_FREQUENCY:
+            small_frequency.append(key)
+    for misfit in small_frequency:
+        word_frequency.pop(misfit)
+
+    # remove flagged misspellings
+    for line in load_include_exclude(filepath_exclude):
+        if line in word_frequency:
+            word_frequency.pop(line)
+
+    # Use a dictionary to clean up everything else...
+    final_words_to_remove = []
+    with load_file(filepath_dictionary) as fobj:
+        dictionary_words = []
+        for line in fobj:
+            if line[0].lower() in letters:
+                line = line.lower().strip()
+                dictionary_words.append(line)
+
+    for word in word_frequency:
+        if word not in dictionary_words:
+            final_words_to_remove.append(word)
+    for word in final_words_to_remove:
+        word_frequency.pop(word)
+
+    for word in dictionary_words:
+        if word not in word_frequency:
+            word_frequency[word] = MINIMUM_FREQUENCY
+
+    # Add known missing words back in (ugh)
+    for line in load_include_exclude(filepath_include):
+        if line in word_frequency:
+            print(f"{line} is already found in the dictionary! Skipping!")
+        else:
+            word_frequency[line] = MINIMUM_FREQUENCY
+
+    return word_frequency
+
+
+def clean_french(word_frequency, filepath_exclude, filepath_include, filepath_dictionary):
+    """Clean a French word frequency list
+
+    Args:
+        word_frequency (Counter):
+        filepath_exclude (str):
+        filepath_include (str):
+    """
+    letters = set("abcdefghijklmnopqrstuvwxyzéàèùâêîôûëïüÿçœæ")
+
+    # fix issues with words containing other characters
+    invalid_chars = list()
+    for key in word_frequency:
+        kl = set(key)
+        if kl.issubset(letters):
+            continue
+        invalid_chars.append(key)
+    for misfit in invalid_chars:
+        word_frequency.pop(misfit)
+
+    # remove words that start with a double a ("aa")
+    double_a = list()
+    for key in word_frequency:
+        if key.startswith("aa"):
+            double_a.append(key)
+    for misfit in double_a:
+        word_frequency.pop(misfit)
+
+    # TODO: other possible fixes?
+
+    # remove small numbers
+    small_frequency = list()
+    for key in word_frequency:
+        if word_frequency[key] <= MINIMUM_FREQUENCY:
+            small_frequency.append(key)
+    for misfit in small_frequency:
+        word_frequency.pop(misfit)
+
+    # remove flagged misspellings
+    for line in load_include_exclude(filepath_exclude):
+        if line in word_frequency:
+            word_frequency.pop(line)
+
+    # Use a dictionary to clean up everything else...
+    final_words_to_remove = []
+    with load_file(filepath_dictionary) as fobj:
+        dictionary_words = []
+        for line in fobj:
+            if line[0].lower() in letters:
+                line = line.lower().strip()
+                dictionary_words.append(line)
+
+    for word in word_frequency:
+        if word not in dictionary_words:
+            final_words_to_remove.append(word)
+    for word in final_words_to_remove:
+        word_frequency.pop(word)
+
+    for word in dictionary_words:
+        if word not in word_frequency:
+            word_frequency[word] = MINIMUM_FREQUENCY
+
+    # Add known missing words back in (ugh)
+    for line in load_include_exclude(filepath_include):
+        if line in word_frequency:
+            print(f"{line} is already found in the dictionary! Skipping!")
+        else:
+            word_frequency[line] = MINIMUM_FREQUENCY
+
+    return word_frequency
+
+
+def clean_portuguese(word_frequency, filepath_exclude, filepath_include, filepath_dictionary):
+    """Clean a Portuguese word frequency list
+
+    Args:
+        word_frequency (Counter):
+        filepath_exclude (str):
+        filepath_include (str):
+    """
+    letters = set("abcdefghijklmnopqrstuvwxyzáâãàçéêíóôõú")
+
+    # fix issues with words containing other characters
+    invalid_chars = list()
+    for key in word_frequency:
+        kl = set(key)
+        if kl.issubset(letters):
+            continue
+        invalid_chars.append(key)
+    for misfit in invalid_chars:
+        word_frequency.pop(misfit)
+
+    # remove words that start with a double a ("aa")
+    double_a = list()
+    for key in word_frequency:
+        if key.startswith("aa"):
+            double_a.append(key)
+    for misfit in double_a:
+        word_frequency.pop(misfit)
+
+    # TODO: other possible fixes?
+
+    # remove small numbers
+    small_frequency = list()
+    for key in word_frequency:
+        if word_frequency[key] <= MINIMUM_FREQUENCY:
+            small_frequency.append(key)
+    for misfit in small_frequency:
+        word_frequency.pop(misfit)
+
+    # remove flagged misspellings
+    for line in load_include_exclude(filepath_exclude):
+        if line in word_frequency:
+            word_frequency.pop(line)
+
+    # Use a dictionary to clean up everything else...
+    final_words_to_remove = []
+    with load_file(filepath_dictionary, encoding="latin-1") as fobj:
+        dictionary_words = []
+        for line in fobj:
+            if line[0].lower() in letters:
+                line = line.lower().strip()
+                dictionary_words.append(line)
+
+    for word in word_frequency:
+        if word not in dictionary_words:
+            final_words_to_remove.append(word)
+    for word in final_words_to_remove:
+        word_frequency.pop(word)
+
+    for word in dictionary_words:
+        if word not in word_frequency:
+            word_frequency[word] = MINIMUM_FREQUENCY
+
+    # Add known missing words back in (ugh)
+    for line in load_include_exclude(filepath_include):
+        if line in word_frequency:
+            print(f"{line} is already found in the dictionary! Skipping!")
+        else:
+            word_frequency[line] = MINIMUM_FREQUENCY
+
+    return word_frequency
+
+
+def clean_russian(word_frequency, filepath_exclude, filepath_include):
+    """Clean an Russian word frequency list
+
+    Args:
+        word_frequency (Counter):
+        filepath_exclude (str):
+        filepath_include (str):
+    """
+    letters = set("абвгдеёжзийклмнопрстуфхцчшщъыьэюя")
+
+    # remove words with invalid characters
+    invalid_chars = list()
+    for key in word_frequency:
+        kl = set(key)
+        if kl.issubset(letters):
+            continue
+        invalid_chars.append(key)
+    for misfit in invalid_chars:
+        word_frequency.pop(misfit)
+
+    # remove words without a vowel
+    no_vowels = list()
+    vowels = set("аеёиоуыэюя")
+    for key in word_frequency:
+        if vowels.isdisjoint(key):
+            no_vowels.append(key)
+    for misfit in no_vowels:
+        word_frequency.pop(misfit)
+
+    # remove ellipses
+    ellipses = list()
+    for key in word_frequency:
+        if ".." in key:
+            ellipses.append(key)
+    for misfit in ellipses:
+        word_frequency.pop(misfit)
+
+    # leading or trailing doubles a, "a'", "zz", ending y's
+    doubles = list()
+    for key in word_frequency:
+        if (
+            key.startswith("аа")
+            and key not in ("аарон", "аарона", "аарону")
+            or key.startswith("ээ")
+            and key not in ("ээг")
+        ):
+            doubles.append(key)
+    for misfit in doubles:
+        word_frequency.pop(misfit)
+
+    # TODO: other possible fixes?
+
+    # remove small numbers
+    small_frequency = list()
+    for key in word_frequency:
+        if word_frequency[key] <= MINIMUM_FREQUENCY:
+            small_frequency.append(key)
+    for misfit in small_frequency:
+        word_frequency.pop(misfit)
+
+    # remove flagged misspellings
+    for line in load_include_exclude(filepath_exclude):
+        if line in word_frequency:
+            word_frequency.pop(line)
+
+    # Add known missing words back in (ugh)
+    for line in load_include_exclude(filepath_include):
+        if line in word_frequency:
+            print(f"{line} is already found in the dictionary! Skipping!")
+        else:
+            word_frequency[line] = MINIMUM_FREQUENCY
+
+    return word_frequency
+
+
+def clean_arabic(word_frequency, filepath_exclude, filepath_include):
+    """Clean an Arabic word frequency list
+
+    Args:
+        word_frequency (Counter):
+        filepath_exclude (str):
+        filepath_include (str):
+    """
+    letters = set("دجحإﻹﻷأآﻵخهعغفقثصضذطكمنتالبيسشظزوةىﻻرؤءئ")
+
+    # remove words with invalid characters
+    invalid_chars = list()
+    for key in word_frequency:
+        kl = set(key)
+        if kl.issubset(letters):
+            continue
+        invalid_chars.append(key)
+    for misfit in invalid_chars:
+        word_frequency.pop(misfit)
+
+    # remove ellipses
+    ellipses = list()
+    for key in word_frequency:
+        if ".." in key:
+            ellipses.append(key)
+    for misfit in ellipses:
+        word_frequency.pop(misfit)
+
+    # TODO: other possible fixes?
+
+    # remove small numbers
+    small_frequency = list()
+    for key in word_frequency:
+        if word_frequency[key] <= MINIMUM_FREQUENCY:
+            small_frequency.append(key)
+    for misfit in small_frequency:
+        word_frequency.pop(misfit)
+
+    # remove flagged misspellings
+    for line in load_include_exclude(filepath_exclude):
+        if line in word_frequency:
+            word_frequency.pop(line)
+
+    # Add known missing words back in (ugh)
+    for line in load_include_exclude(filepath_include):
+        if line in word_frequency:
+            print(f"{line} is already found in the dictionary! Skipping!")
+        else:
+            word_frequency[line] = MINIMUM_FREQUENCY
+
+    return word_frequency
+
+
+def clean_basque(word_frequency, filepath_exclude, filepath_include):
+    """Clean a Basque word frequency list
+
+    Args:
+        word_frequency (Counter):
+        filepath_exclude (str):
+        filepath_include (str):
+    """
+    letters = set("abcdefghijklmnopqrstuvwxyzñ")
+
+    # fix issues with words containing other characters
+    invalid_chars = list()
+    for key in word_frequency:
+        kl = set(key)
+        if kl.issubset(letters):
+            continue
+        invalid_chars.append(key)
+    for misfit in invalid_chars:
+        word_frequency.pop(misfit)
+
+    # remove words that start with a double a ("aa")
+    double_a = list()
+    for key in word_frequency:
+        if key.startswith("aa"):
+            double_a.append(key)
+    for misfit in double_a:
+        word_frequency.pop(misfit)
+
+    # TODO: other possible fixes?
+
+    # remove small numbers
+    small_frequency = list()
+    for key in word_frequency:
+        if word_frequency[key] <= MINIMUM_FREQUENCY:
+            small_frequency.append(key)
+    for misfit in small_frequency:
+        word_frequency.pop(misfit)
+
+    # remove flagged misspellings
+    for line in load_include_exclude(filepath_exclude):
+        if line in word_frequency:
+            word_frequency.pop(line)
+
+    # Add known missing words back in (ugh)
+    for line in load_include_exclude(filepath_include):
+        if line in word_frequency:
+            print(f"{line} is already found in the dictionary! Skipping!")
+        else:
+            word_frequency[line] = MINIMUM_FREQUENCY
+
+    return word_frequency
+
+
+def clean_latvian(word_frequency, filepath_exclude, filepath_include):
+    """Clean a Latvian word frequency list
+
+    Args:
+        word_frequency (Counter):
+        filepath_exclude (str):
+        filepath_include (str):
+    """
+    letters = set("aābcčdeēfgģhiījkķlļmnņoprsštuūvzž")
+
+    # remove words with invalid characters
+    invalid_chars = list()
+
+    for key in word_frequency:
+        kl = set(key)
+        if kl.issubset(letters):
+            continue
+        invalid_chars.append(key)
+    for misfit in invalid_chars:
+        word_frequency.pop(misfit)
+
+    # remove words without a vowel
+    no_vowels = list()
+    vowels = set("aāiīeēouū")
+    for key in word_frequency:
+        if vowels.isdisjoint(key):
+            no_vowels.append(key)
+    for misfit in no_vowels:
+        word_frequency.pop(misfit)
+
+    # remove ellipses
+    ellipses = list()
+    for key in word_frequency:
+        if ".." in key:
+            ellipses.append(key)
+    for misfit in ellipses:
+        word_frequency.pop(misfit)
+
+    # leading or trailing doubles aa or ii
+    doubles = list()
+    for key in word_frequency:
+        if key.startswith("аа") or key.startswith("ii"):
+            doubles.append(key)
+    for misfit in doubles:
+        word_frequency.pop(misfit)
+
+    # remove single letters
+    single_letters = list()
+    for key in word_frequency:
+        if len(key) == 1:
+            single_letters.append(key)
+    for misfit in single_letters:
+        word_frequency.pop(misfit)
+
+    # TODO: other possible fixes?
+
+    # remove small numbers
+    small_frequency = list()
+    for key in word_frequency:
+        if word_frequency[key] <= MINIMUM_FREQUENCY:
+            small_frequency.append(key)
+    for misfit in small_frequency:
+        word_frequency.pop(misfit)
+
+    # remove flagged misspellings
+    for line in load_include_exclude(filepath_exclude):
+        if line in word_frequency:
+            word_frequency.pop(line)
+
+    # Add known missing words back in (ugh)
+    for line in load_include_exclude(filepath_include):
+        if line in word_frequency:
+            print(f"{line} is already found in the dictionary! Skipping!")
+        else:
+            word_frequency[line] = MINIMUM_FREQUENCY
+
+    return word_frequency
+
+
+def clean_dutch(word_frequency, filepath_exclude, filepath_include, filepath_dictionary):
+    """Clean a Dutch word frequency list
+
+    Args:
+        word_frequency (Counter):
+        filepath_exclude (str):
+        filepath_include (str):
+    """
+    letters = set("abcdefghijklmnopqrstuvwxyz'")
+
+    # remove words with invalid characters
+    invalid_chars = list()
+    for key in word_frequency:
+        kl = set(key)
+        if kl.issubset(letters):
+            continue
+        invalid_chars.append(key)
+    for misfit in invalid_chars:
+        word_frequency.pop(misfit)
+
+    # remove words without a vowel
+    no_vowels = list()
+    vowels = set("aeiouy")
+    for key in word_frequency:
+        if vowels.isdisjoint(key):
+            no_vowels.append(key)
+    for misfit in no_vowels:
+        word_frequency.pop(misfit)
+
+    # Remove double punctuation (a-a-a-able) or (a'whoppinganda'whumping)
+    double_punc = list()
+    for key in word_frequency:
+        if key.count("'") > 1 or key.count("-") > 1 or key.count(".") > 2:
+            double_punc.append(key)
+    for misfit in double_punc:
+        word_frequency.pop(misfit)
+
+    # remove ellipses
+    ellipses = list()
+    for key in word_frequency:
+        if ".." in key:
+            ellipses.append(key)
+    for misfit in ellipses:
+        word_frequency.pop(misfit)
+
+    # leading or trailing doubles a, "a'", "zz", ending y's
+    doubles = list()
+    for key in word_frequency:
+        if (
+            key.startswith("aa")
+            and key not in ("aardvark", "aardvarks")
+            or key.startswith("a'")
+            or key.startswith("zz")
+            or key.endswith("yy")
+            or key.endswith("hh")
+        ):
+            doubles.append(key)
+    for misfit in doubles:
+        word_frequency.pop(misfit)
+
+    # common missing spaces
+    missing_spaces = list()
+    for key in word_frequency:
+        if (
+            key.startswith("about")
+            and key != "about"
+            or key.startswith("above")
+            and key != "above"
+            or key.startswith("after")
+            and key != "after"
+            or key.startswith("against")
+            and key != "against"
+            or key.startswith("all")
+            and word_frequency[key] < 15
+            or key.startswith("almost")
+            and key != "almost"
+            or key.startswith("to")
+            and word_frequency[key] < 25
+            or key.startswith("can't")
+            and key != "can't"
+            or key.startswith("i'm")
+            and key != "i'm"
+        ):
+            missing_spaces.append(key)
+    for misfit in missing_spaces:
+        word_frequency.pop(misfit)
+
+    # TODO: other possible fixes?
+
+    # remove small numbers
+    small_frequency = list()
+    for key in word_frequency:
+        if word_frequency[key] <= MINIMUM_FREQUENCY:
+            small_frequency.append(key)
+    for misfit in small_frequency:
+        word_frequency.pop(misfit)
+
+    # remove flagged misspellings
+    for line in load_include_exclude(filepath_exclude):
+        if line in word_frequency:
+            word_frequency.pop(line)
+
+    # Use a dictionary to clean up everything else...
+    final_words_to_remove = []
+    with load_file(filepath_dictionary) as fobj:
+        dictionary_words = []
+        for line in fobj:
+            if line[0].lower() in letters:
+                line = line.lower().strip()
+                dictionary_words.append(line)
+
+    for word in word_frequency:
+        if word not in dictionary_words:
+            final_words_to_remove.append(word)
+    for word in final_words_to_remove:
+        word_frequency.pop(word)
+
+    for word in dictionary_words:
+        if word not in word_frequency:
+            word_frequency[word] = MINIMUM_FREQUENCY
+
+    # Add known missing words back in (ugh)
+    for line in load_include_exclude(filepath_include):
+        if line in word_frequency:
+            print(f"{line} is already found in the dictionary! Skipping!")
+        else:
+            word_frequency[line] = MINIMUM_FREQUENCY
+
+    return word_frequency
+
+
+def clean_persian(word_frequency, filepath_exclude, filepath_include):
+    """Clean a Persian word frequency list
+
+    Args:
+        word_frequency (Counter):
+        filepath_exclude (str):
+        filepath_include (str):
+    """
+    letters = set("آابپتثجچحخدذرزژسشصضطظعغفقکگلمنوهی")
+
+    # remove words with invalid characters
+    invalid_chars = list()
+    for key in word_frequency:
+        kl = set(key)
+        if kl.issubset(letters):
+            continue
+        invalid_chars.append(key)
+    for misfit in invalid_chars:
+        word_frequency.pop(misfit)
+
+    # remove ellipses
+    ellipses = list()
+    for key in word_frequency:
+        if ".." in key:
+            ellipses.append(key)
+    for misfit in ellipses:
+        word_frequency.pop(misfit)
+
+    # TODO: other possible fixes?
+
+    # remove small numbers
+    small_frequency = list()
+    for key in word_frequency:
+        if word_frequency[key] <= MINIMUM_FREQUENCY:
+            small_frequency.append(key)
+    for misfit in small_frequency:
+        word_frequency.pop(misfit)
+
+    # remove flagged misspellings
+    for line in load_include_exclude(filepath_exclude):
+        if line in word_frequency:
+            word_frequency.pop(line)
+
+    # Add known missing words back in (ugh)
+    for line in load_include_exclude(filepath_include):
+        if line in word_frequency:
+            print(f"{line} is already found in the dictionary! Skipping!")
+        else:
+            word_frequency[line] = MINIMUM_FREQUENCY
+
+    return word_frequency
+
+
+def _parse_args():
+    """parse arguments for command-line usage"""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Build a new dictionary (word frequency) using the OpenSubtitles2018 project"
+    )
+    parser.add_argument(
+        "-l",
+        "--language",
+        required=True,
+        help="The language being built",
+        choices=["en", "es", "de", "fr", "pt", "ru", "ar", "lv", "eu", "nl", "it", "fa"],
+    )
+    parser.add_argument(
+        "-f", "--file-path", help="The path to the downloaded text file OR the saved word frequency json"
+    )
+    parser.add_argument(
+        "-p", "--parse-input", action="store_true", help="Add this if providing a text file to be parsed"
+    )
+    parser.add_argument(
+        "-m", "--misfit-file", action="store_true", help="Create file with words which was removed from dictionary"
+    )
+
+    args = parser.parse_args()
+
+    # validate that we have a path, if needed!
+    if args.parse_input and not args.file_path:
+        raise Exception("A path is required if parsing a text file!")
+
+    if args.file_path:
+        args.file_path = os.path.abspath(os.path.realpath(args.file_path))
+
+        if not os.path.exists(args.file_path):
+            raise FileNotFoundError("File Not Found. A valid path is required if parsing a text file!")
+
+    return args
+
+
+if __name__ == "__main__":
+    args = _parse_args()
+
+    # get current path to find where the script is currently
+    script_path = os.path.dirname(os.path.abspath(__file__))
+    module_path = os.path.abspath(f"{script_path}/../")
+    resources_path = os.path.abspath(f"{module_path}/resources/")
+    data_path = os.path.abspath(f"{script_path}/data/")
+    exclude_filepath = os.path.abspath(f"{data_path}/{args.language}_exclude.txt")
+    include_filepath = os.path.abspath(f"{data_path}/{args.language}_include.txt")
+
+    print(script_path)
+    print(module_path)
+    print(resources_path)
+    print(exclude_filepath)
+    print(include_filepath)
+
+    # Should we re-process a file?
+    if args.parse_input:
+        json_path = os.path.join(script_path, "data", f"{args.language}_full.json")
+        print(json_path)
+        word_frequency = build_word_frequency(args.file_path, args.language, json_path)
+    else:
+        json_path = os.path.join(script_path, "data", f"{args.language}_full.json.gz")
+        print(json_path)
+        with load_file(json_path, "utf-8") as f:
+            word_frequency = json.load(f)
+
+    # create include and exclude files before cleaning
+    for filepath in (include_filepath, exclude_filepath):
+        with open(filepath, "a+"):
+            pass
+
+    # clean up the dictionary
+    if args.language == "en":
+        dict_path = os.path.abspath(f"{data_path}/levidromelist-dicts/american-english-large.txt")
+        word_frequency = clean_english(word_frequency, exclude_filepath, include_filepath, dict_path)
+    elif args.language == "es":
+        dict_path = os.path.abspath(f"{data_path}/levidromelist-dicts/spanish.txt")
+        word_frequency = clean_spanish(word_frequency, exclude_filepath, include_filepath, dict_path)
+    elif args.language == "it":
+        dict_path = os.path.abspath(f"{data_path}/levidromelist-dicts/italian.txt")
+        word_frequency = clean_italian(word_frequency, exclude_filepath, include_filepath, dict_path)
+    elif args.language == "de":
+        dict_path = os.path.abspath(f"{data_path}/levidromelist-dicts/new_german.txt")
+        word_frequency = clean_german(word_frequency, exclude_filepath, include_filepath, dict_path)
+    elif args.language == "fr":
+        dict_path = os.path.abspath(f"{data_path}/levidromelist-dicts/french.txt")
+        word_frequency = clean_french(word_frequency, exclude_filepath, include_filepath, dict_path)
+    elif args.language == "pt":
+        dict_path = os.path.abspath(f"{data_path}/levidromelist-dicts/portuguese.txt")
+        word_frequency = clean_portuguese(word_frequency, exclude_filepath, include_filepath, dict_path)
+    elif args.language == "ru":
+        word_frequency = clean_russian(word_frequency, exclude_filepath, include_filepath)
+    elif args.language == "ar":
+        word_frequency = clean_arabic(word_frequency, exclude_filepath, include_filepath)
+    elif args.language == "eu":
+        word_frequency = clean_basque(word_frequency, exclude_filepath, include_filepath)
+    elif args.language == "lv":
+        word_frequency = clean_latvian(word_frequency, exclude_filepath, include_filepath)
+    elif args.language == "nl":
+        dict_path = os.path.abspath(f"{data_path}/levidromelist-dicts/dutch.txt")
+        word_frequency = clean_dutch(word_frequency, exclude_filepath, include_filepath, dict_path)
+    elif args.language == "fa":
+        word_frequency = clean_persian(word_frequency, exclude_filepath, include_filepath)
+
+    # export word frequency for review!
+    word_frequency_path = os.path.join(script_path, f"{args.language}.json")
+    print(word_frequency_path)
+    export_word_frequency(word_frequency_path, word_frequency)
+
+    if args.misfit_file:
+        misfit_filepath = os.path.abspath(f"{data_path}/{args.language}_misfit.txt")
+        export_misfit_words(misfit_filepath, json_path, word_frequency)

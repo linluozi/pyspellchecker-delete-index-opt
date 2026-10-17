@@ -1,0 +1,34 @@
+{
+  "per_word_ms": {
+    "already correct": {
+      "upstream": 0.0020666666666666667,
+      "optimized": 0.0022
+    },
+    "1-edit typo": {
+      "upstream": 0.5098333333333332,
+      "optimized": 0.4966833333333333
+    },
+    "2-edit typo": {
+      "upstream": 519.9489125,
+      "optimized": 4.9581875
+    },
+    "random string": {
+      "upstream": 232.299225,
+      "optimized": 2.2895
+    }
+  },
+  "work_per_query": {
+    "edit_distance_1 calls": {
+      "upstream": 660.2666666666667,
+      "optimized": 0.9666666666666667
+    },
+    "strings constructed": {
+      "upstream": 603755.6533333333,
+      "optimized": 8907.02
+    },
+    "should_check calls": {
+      "upstream": 1341.1733333333334,
+      "optimized": 6.766666666666667
+    }
+  }
+}
