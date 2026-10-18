@@ -67,6 +67,19 @@ nav = [("problem", "1 · The defect"), ("distance", "2 · Which distance"), ("fi
        ("run", "7 · Reproduce")]
 
 
+def num(v):
+    """小数值不要被四舍五入成 0.00 —— 按量级选小数位。"""
+    if v == 0:
+        return "0"
+    if v < 0.01:
+        return f"{v:.4f}"
+    if v < 1:
+        return f"{v:.3f}"
+    if v < 100:
+        return f"{v:.2f}"
+    return f"{v:,.1f}"
+
+
 def wall_rows():
     out = []
     for label, n, upw, opw, ratio, upt, opt in rows_wall:
@@ -74,7 +87,7 @@ def wall_rows():
         r = f"{ratio:,.1f}&times;" if ratio > 1.05 else "&asymp;1&times;"
         out.append(
             f"<tr{cls}><td>{label}</td><td class='num'>{n}</td>"
-            f"<td class='num'>{upw:,.2f}</td><td class='num'>{opw:,.2f}</td>"
+            f"<td class='num'>{num(upw)}</td><td class='num'>{num(opw)}</td>"
             f"<td class='num strong'>{r}</td></tr>"
         )
     return "\n".join(out)
@@ -85,7 +98,7 @@ def scan_rows():
     for n, cnt, upw, opw, ratio in rows_scan:
         out.append(
             f"<tr><td class='num'>{n}</td><td class='num'>{cnt}</td>"
-            f"<td class='num'>{upw:,.1f}</td><td class='num'>{opw:,.2f}</td>"
+            f"<td class='num'>{num(upw)}</td><td class='num'>{num(opw)}</td>"
             f"<td class='num strong'>{ratio:,.0f}&times;</td></tr>"
         )
     return "\n".join(out)

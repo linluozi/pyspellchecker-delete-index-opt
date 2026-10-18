@@ -222,10 +222,10 @@
   <table>
     <thead><tr><th>query class</th><th class="num">n</th><th class="num">upstream ms/word</th><th class="num">optimised ms/word</th><th class="num">speed-up</th></tr></thead>
     <tbody>
-      <tr><td>already correct</td><td class='num'>300</td><td class='num'>0.00</td><td class='num'>0.00</td><td class='num strong'>&asymp;1&times;</td></tr>
-<tr><td>1-edit typo</td><td class='num'>600</td><td class='num'>0.51</td><td class='num'>0.50</td><td class='num strong'>&asymp;1&times;</td></tr>
-<tr class="hi"><td>2-edit typo</td><td class='num'>800</td><td class='num'>519.95</td><td class='num'>4.96</td><td class='num strong'>104.9&times;</td></tr>
-<tr class="hi"><td>random string</td><td class='num'>400</td><td class='num'>232.30</td><td class='num'>2.29</td><td class='num strong'>101.5&times;</td></tr>
+      <tr><td>already correct</td><td class='num'>300</td><td class='num'>0.0021</td><td class='num'>0.0022</td><td class='num strong'>&asymp;1&times;</td></tr>
+<tr><td>1-edit typo</td><td class='num'>600</td><td class='num'>0.510</td><td class='num'>0.497</td><td class='num strong'>&asymp;1&times;</td></tr>
+<tr class="hi"><td>2-edit typo</td><td class='num'>800</td><td class='num'>519.9</td><td class='num'>4.96</td><td class='num strong'>104.9&times;</td></tr>
+<tr class="hi"><td>random string</td><td class='num'>400</td><td class='num'>232.3</td><td class='num'>2.29</td><td class='num strong'>101.5&times;</td></tr>
       <tr class="total"><td>whole batch</td><td class="num">2,100</td><td class="num">—</td><td class="num">—</td><td class="num">509.2 s &rarr; 5.2 s</td></tr>
     </tbody>
   </table>
@@ -265,8 +265,8 @@
   <table>
     <thead><tr><th class="num">word length</th><th class="num">queries</th><th class="num">upstream ms</th><th class="num">optimised ms</th><th class="num">speed-up</th></tr></thead>
     <tbody>
-      <tr><td class='num'>3</td><td class='num'>1</td><td class='num'>56.9</td><td class='num'>0.88</td><td class='num strong'>65&times;</td></tr>
-<tr><td class='num'>5</td><td class='num'>2</td><td class='num'>145.2</td><td class='num'>0.86</td><td class='num strong'>169&times;</td></tr>
+      <tr><td class='num'>3</td><td class='num'>1</td><td class='num'>56.85</td><td class='num'>0.877</td><td class='num strong'>65&times;</td></tr>
+<tr><td class='num'>5</td><td class='num'>2</td><td class='num'>145.2</td><td class='num'>0.860</td><td class='num strong'>169&times;</td></tr>
 <tr><td class='num'>6</td><td class='num'>7</td><td class='num'>387.5</td><td class='num'>4.45</td><td class='num strong'>87&times;</td></tr>
 <tr><td class='num'>7</td><td class='num'>5</td><td class='num'>295.6</td><td class='num'>2.43</td><td class='num strong'>122&times;</td></tr>
 <tr><td class='num'>8</td><td class='num'>2</td><td class='num'>361.9</td><td class='num'>2.63</td><td class='num strong'>138&times;</td></tr>
