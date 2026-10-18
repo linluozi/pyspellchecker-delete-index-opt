@@ -9,14 +9,15 @@ pure-Python spell checker (MIT, baseline commit `14ec8657` / v0.9.1).
 > returning *exactly* the same candidate set — verified element by element on 2,100 real queries
 > and 71,829 exhaustive ones.
 
-| | upstream | optimised | |
+| measurement | upstream | optimised | change |
 | --- | ---: | ---: | --- |
-| 2-edit typo, ms per query | 519.9 | 4.96 | **105×** |
-| random string, ms per query | 232.3 | 2.29 | **101×** |
-| interleaved A/B, 7 rounds, median | 15,573 ms | 146.5 ms | **106.5×** |
+| 2-edit typo, ms per query | 519.9 | 4.96 | **105× faster** |
+| random string, ms per query | 232.3 | 2.29 | **101× faster** |
+| interleaved A/B, 7 rounds, median | 15,573 ms | 146.5 ms | **106.5× faster** |
 | noise floor (same code vs itself) | — | — | 1.003× |
-| strings constructed per 2-edit query | 603,756 | 8,907 | **68×** |
-| cost | — | +102.6 MB RAM, 0.79 s one-off build | |
+| strings constructed per 2-edit query | 603,756 | 8,907 | **68× fewer** |
+| index build, one-off | — | 0.79 s | +0.79 s |
+| resident memory | 43.4 MB | 145.9 MB | **+102.6 MB** |
 
 ![throughput and work counters](bench/speedup.png)
 
@@ -65,7 +66,7 @@ two, and why a bucket is a bare string until a second word maps to it — are in
 | 2,100 real-dictionary queries (correct / 1-edit / 2-edit / random) | **2,100 / 2,100 identical** |
 | exhaustive sweeps, 5 configurations, small dictionary | **71,829 queries, 0 differences** |
 | poison test (verification deliberately disabled) | harness reports hundreds of mismatches → it has teeth |
-| `changes.patch` applies and reproduces `optimized/` | byte-for-byte (`patch --binary -p1`, then `cmp`) |
+| `changes.patch` applies and reproduces `optimized/` | byte-for-byte (`patch -p1`, then `cmp`) |
 | `LICENSE` versus upstream | byte-identical (`sha1 39f9d947…`) |
 
 `bench/verify.json` holds the raw record of every run quoted above.

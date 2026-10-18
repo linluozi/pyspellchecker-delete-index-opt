@@ -57,12 +57,14 @@ def fmt(v):
         return f"{v / 1000:.0f}k"
     if v >= 100:
         return f"{v:.0f}"
+    if v >= 10:
+        return f"{v:.1f}"
     if v >= 1:
-        return f"{v:.3g}"
-    return f"{v:.4g}"
+        return f"{v:.2f}"
+    return f"{v:.3g}"
 
 
-fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.6))
+fig, axes = plt.subplots(1, 2, figsize=(11.6, 5.0))
 
 # ---- 左：每词耗时（对数轴）----
 ax = axes[0]
@@ -70,21 +72,23 @@ labels = list(per_word)
 up_v = [per_word[k]["upstream"] for k in labels]
 op_v = [per_word[k]["optimized"] for k in labels]
 pos = range(len(labels))
-w = 0.38
+w = 0.36
 ax.bar([p - w / 2 for p in pos], up_v, w, label="upstream", color=TERRACOTTA)
 ax.bar([p + w / 2 for p in pos], op_v, w, label="optimized", color=AMBER)
 ax.set_yscale("log")
 ax.set_xticks(list(pos))
-ax.set_xticklabels(labels)
+ax.set_xticklabels([x.replace(" ", "\n") for x in labels], fontsize=9)
 ax.set_ylabel("ms per query (log scale)")
-ax.set_ylim(1e-4, 5e3)
+# 上方留白给 speed-up 标注，避免压到柱顶
+ax.set_ylim(1e-4, 3e4)
 for i, k in enumerate(labels):
     close = abs(up_v[i] - op_v[i]) / max(up_v[i], op_v[i]) < 0.2
-    ax.text(i - w / 2, up_v[i] * (4.5 if close else 1.6), fmt(up_v[i]), ha="center", va="bottom", fontsize=8, color=INK)
-    ax.text(i + w / 2, op_v[i] * 1.6, fmt(op_v[i]), ha="center", va="bottom", fontsize=8, color=INK)
-    if per_word[k]["upstream"] / per_word[k]["optimized"] > 1.5:
-        ax.text(i, 2.4e3, f"{per_word[k]['upstream'] / per_word[k]['optimized']:.0f}x", ha="center", fontsize=9, color=OLIVE)
-ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=2, frameon=False)
+    ax.text(i - w / 2, up_v[i] * (3.0 if close else 1.5), fmt(up_v[i]), ha="center", va="bottom", fontsize=8, color=INK)
+    ax.text(i + w / 2, op_v[i] * (0.33 if close else 1.5), fmt(op_v[i]), ha="center", va="bottom", fontsize=8, color=INK)
+    ratio = per_word[k]["upstream"] / per_word[k]["optimized"]
+    txt = f"{ratio:.0f}x" if ratio > 1.5 else "same"
+    ax.text(i, 4.5e3, txt, ha="center", fontsize=10, color=OLIVE if ratio > 1.5 else MUTED, fontweight="bold" if ratio > 1.5 else "normal")
+ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2, frameon=False)
 ax.set_title("Wall clock per query", color=INK)
 
 # ---- 右：每查询的构造量（对数轴）----
@@ -97,18 +101,18 @@ ax.bar([p - w / 2 for p in pos], up_v, w, label="upstream", color=TERRACOTTA)
 ax.bar([p + w / 2 for p in pos], op_v, w, label="optimized", color=AMBER)
 ax.set_yscale("log")
 ax.set_xticks(list(pos))
-ax.set_xticklabels([x.replace(" ", "\n") for x in labels], fontsize=8)
+ax.set_xticklabels([x.replace(" ", "\n") for x in labels], fontsize=9)
 ax.set_ylabel("operations per query (log scale)")
-ax.set_ylim(0.5, 5e6)
+ax.set_ylim(0.5, 3e8)
 for i, k in enumerate(labels):
-    ax.text(i - w / 2, up_v[i] * 1.6, fmt(up_v[i]), ha="center", va="bottom", fontsize=8, color=INK)
-    ax.text(i + w / 2, op_v[i] * 1.6, fmt(op_v[i]), ha="center", va="bottom", fontsize=8, color=INK)
-    ax.text(i, 3.2e6, f"{up_v[i] / op_v[i]:.0f}x", ha="center", fontsize=9, color=OLIVE)
-ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=2, frameon=False)
+    ax.text(i - w / 2, up_v[i] * 1.5, fmt(up_v[i]), ha="center", va="bottom", fontsize=8, color=INK)
+    ax.text(i + w / 2, op_v[i] * 1.5, fmt(op_v[i]), ha="center", va="bottom", fontsize=8, color=INK)
+    ax.text(i, 3.5e7, f"{up_v[i] / op_v[i]:.0f}x", ha="center", fontsize=10, color=OLIVE, fontweight="bold")
+ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2, frameon=False)
 ax.set_title("Deterministic work counters", color=INK)
 
-fig.suptitle("pyspellchecker: delete-variant index vs. quadratic re-expansion", color=INK, y=0.98)
-fig.tight_layout(rect=(0.01, 0.02, 1, 0.9))
+fig.suptitle("pyspellchecker: delete-variant index vs. quadratic re-expansion", color=INK, y=0.98, fontsize=12)
+fig.tight_layout(rect=(0.01, 0.02, 1, 0.91))
 fig.savefig(OUT, dpi=150)
 print("wrote", OUT)
 
